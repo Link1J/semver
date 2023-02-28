@@ -1,26 +1,29 @@
-use crate::{Comparator, Op, Version, VersionReq};
+use crate::{Comparator, Op, Test, Version, VersionReq};
 
 pub(crate) fn matches_req(req: &VersionReq, ver: &Version) -> bool {
-    for cmp in &req.comparators {
-        if !matches_impl(cmp, ver) {
-            return false;
+    if req.comparators.is_empty() {
+        return ver.pre.is_empty();
+    }
+
+    let mut valid = false;
+    let mut out = false;
+    let mut pre = ver.pre.is_empty();
+    for (test, cmp) in &req.comparators {
+        if !pre {
+            // If a version has a prerelease tag (for example, 1.2.3-alpha.3) then it
+            // will only be allowed to satisfy req if at least one comparator with the
+            // same major.minor.patch also has a prerelease tag.
+            pre = pre_is_compatible(cmp, ver);
+        }
+        let state = matches_impl(cmp, ver) & pre;
+        if let Test::Or = test {
+            valid |= out;
+            out = state;
+        } else {
+            out &= state;
         }
     }
-
-    if ver.pre.is_empty() {
-        return true;
-    }
-
-    // If a version has a prerelease tag (for example, 1.2.3-alpha.3) then it
-    // will only be allowed to satisfy req if at least one comparator with the
-    // same major.minor.patch also has a prerelease tag.
-    for cmp in &req.comparators {
-        if pre_is_compatible(cmp, ver) {
-            return true;
-        }
-    }
-
-    false
+    valid | out
 }
 
 pub(crate) fn matches_comparator(cmp: &Comparator, ver: &Version) -> bool {

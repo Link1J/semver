@@ -187,7 +187,7 @@ pub struct Version {
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(no_const_vec_new, derive(Default))]
 pub struct VersionReq {
-    pub comparators: Vec<Comparator>,
+    pub comparators: Vec<(Test, Comparator)>,
 }
 
 /// A pair of comparison operator and partial version, such as `>=1.2`. Forms
@@ -259,6 +259,17 @@ pub enum Op {
     Tilde,
     Caret,
     Wildcard,
+
+    #[cfg(no_non_exhaustive)] // rustc <1.40
+    #[doc(hidden)]
+    __NonExhaustive,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[cfg_attr(not(no_non_exhaustive), non_exhaustive)]
+pub enum Test {
+    And,
+    Or,
 
     #[cfg(no_non_exhaustive)] // rustc <1.40
     #[doc(hidden)]

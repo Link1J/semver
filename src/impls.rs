@@ -1,6 +1,6 @@
 use crate::backport::*;
 use crate::identifier::Identifier;
-use crate::{BuildMetadata, Comparator, Prerelease, VersionReq};
+use crate::{BuildMetadata, Comparator, Prerelease, Test, VersionReq};
 use core::cmp::Ordering;
 use core::hash::{Hash, Hasher};
 use core::iter::FromIterator;
@@ -149,6 +149,15 @@ impl FromIterator<Comparator> for VersionReq {
     fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = Comparator>,
+    {
+        Self::from_iter(std::iter::once(Test::And).cycle().zip(iter))
+    }
+}
+
+impl FromIterator<(Test, Comparator)> for VersionReq {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (Test, Comparator)>,
     {
         let comparators = Vec::from_iter(iter);
         VersionReq { comparators }

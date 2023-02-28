@@ -35,9 +35,12 @@ impl Display for VersionReq {
         if self.comparators.is_empty() {
             return formatter.write_str("*");
         }
-        for (i, comparator) in self.comparators.iter().enumerate() {
+        for (i, (test, comparator)) in self.comparators.iter().enumerate() {
             if i > 0 {
-                formatter.write_str(", ")?;
+                match test {
+                    crate::Test::And => formatter.write_str(", ")?,
+                    crate::Test::Or => formatter.write_str(" || ")?,
+                }
             }
             write!(formatter, "{}", comparator)?;
         }

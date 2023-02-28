@@ -1,7 +1,7 @@
 use crate::backport::*;
 use crate::error::{ErrorKind, Position};
 use crate::identifier::Identifier;
-use crate::{BuildMetadata, Comparator, Op, Prerelease, Version, VersionReq};
+use crate::{BuildMetadata, Comparator, Op, Prerelease, Test, Version, VersionReq};
 use core::str::FromStr;
 
 /// Error parsing a SemVer version or version requirement.
@@ -100,7 +100,7 @@ impl FromStr for VersionReq {
 
         let depth = 0;
         let mut comparators = Vec::new();
-        let len = version_req(text, &mut comparators, depth)?;
+        let len = version_req(text, &mut comparators, depth, Test::Or, None)?;
         unsafe { comparators.set_len(len) }
         Ok(VersionReq { comparators })
     }
@@ -151,7 +151,11 @@ impl Error {
 }
 
 impl Op {
-    const DEFAULT: Self = Op::Caret;
+    const DEFAULT: Self = Op::Exact;
+}
+
+impl Test {
+    const DEFAULT: Self = Test::And;
 }
 
 fn numeric_identifier(input: &str, pos: Position) -> Result<(u64, &str), Error> {
@@ -364,8 +368,14 @@ fn comparator(input: &str) -> Result<(Comparator, Position, &str), Error> {
     Ok((comparator, pos, text))
 }
 
-fn version_req(input: &str, out: &mut Vec<Comparator>, depth: usize) -> Result<usize, Error> {
-    let (comparator, pos, text) = match comparator(input) {
+fn version_req(
+    input: &str,
+    out: &mut Vec<(Test, Comparator)>,
+    depth: usize,
+    test: Test,
+    forced_op: Option<Op>,
+) -> Result<usize, Error> {
+    let (mut comparator, pos, text) = match comparator(input) {
         Ok(success) => success,
         Err(mut error) => {
             if let Some((ch, mut rest)) = wildcard(input) {
@@ -378,14 +388,25 @@ fn version_req(input: &str, out: &mut Vec<Comparator>, depth: usize) -> Result<u
         }
     };
 
+    if let Some(forced_op) = forced_op {
+        comparator.op = forced_op;
+    }
+
     if text.is_empty() {
         out.reserve_exact(depth + 1);
-        unsafe { out.as_mut_ptr().add(depth).write(comparator) }
+        unsafe { out.as_mut_ptr().add(depth).write((test, comparator)) }
         return Ok(depth + 1);
     }
 
-    let text = if let Some(text) = text.strip_prefix(',') {
-        text.trim_start_matches(' ')
+    let (text, next_test, forced_op) = if let Some(text) = text.strip_prefix(',') {
+        (text.trim_start_matches(' '), Test::DEFAULT, None)
+    } else if let Some(text) = text.strip_prefix('-') {
+        comparator.op = Op::GreaterEq;
+        (text.trim_start_matches(' '), Test::DEFAULT, Some(Op::Less))
+    } else if op(text).1 != text {
+        (text, Test::DEFAULT, None)
+    } else if let Some(text) = text.strip_prefix("||") {
+        (text.trim_start_matches(' '), Test::Or, None)
     } else {
         let unexpected = text.chars().next().unwrap();
         return Err(Error::new(ErrorKind::ExpectedCommaFound(pos, unexpected)));
@@ -399,7 +420,7 @@ fn version_req(input: &str, out: &mut Vec<Comparator>, depth: usize) -> Result<u
     // Recurse to collect parsed Comparator objects on the stack. We perform a
     // single allocation to allocate exactly the right sized Vec only once the
     // total number of comparators is known.
-    let len = version_req(text, out, depth + 1)?;
-    unsafe { out.as_mut_ptr().add(depth).write(comparator) }
+    let len = version_req(text, out, depth + 1, next_test, forced_op)?;
+    unsafe { out.as_mut_ptr().add(depth).write((test, comparator)) }
     Ok(len)
 }
